@@ -32,6 +32,7 @@ from ..messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UserPromptPart,
     VideoUrl,
 )
@@ -384,6 +385,12 @@ class GeminiModel(Model):
                     else:
                         file_data = _GeminiFileDataPart(file_data={'file_uri': item.url, 'mime_type': item.media_type})
                         content.append(file_data)
+                elif isinstance(item, UploadedFile):
+                    media_type = item.inferred_media_type
+                    if media_type is None:
+                        raise ValueError(f'Could not determine media type for uploaded file: {item.file_id}')
+                    file_data = _GeminiFileDataPart(file_data={'file_uri': item.file_id, 'mime_type': media_type})
+                    content.append(file_data)
                 else:
                     assert_never(item)
         return content

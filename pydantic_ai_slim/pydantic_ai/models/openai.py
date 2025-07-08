@@ -33,6 +33,7 @@ from ..messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UserPromptPart,
     VideoUrl,
 )
@@ -562,6 +563,30 @@ class OpenAIModel(Model):
                     content.append(file)
                 elif isinstance(item, VideoUrl):  # pragma: no cover
                     raise NotImplementedError('VideoUrl is not supported for OpenAI')
+                elif isinstance(item, UploadedFile):
+                    media_type = item.inferred_media_type
+                    if media_type and media_type.startswith('image/'):
+                        # For images, use the file_id as a file reference
+                        content.append(
+                            File(
+                                file=FileFile(
+                                    file_data=item.file_id,
+                                    filename=item.filename or 'uploaded_image',
+                                ),
+                                type='file',
+                            )
+                        )
+                    else:
+                        # For documents and other files, use file reference
+                        content.append(
+                            File(
+                                file=FileFile(
+                                    file_data=item.file_id,
+                                    filename=item.filename or 'uploaded_file',
+                                ),
+                                type='file',
+                            )
+                        )
                 else:
                     assert_never(item)
         return chat.ChatCompletionUserMessageParam(role='user', content=content)
@@ -962,6 +987,25 @@ class OpenAIResponsesModel(Model):
                     )
                 elif isinstance(item, VideoUrl):  # pragma: no cover
                     raise NotImplementedError('VideoUrl is not supported for OpenAI.')
+                elif isinstance(item, UploadedFile):
+                    media_type = item.inferred_media_type
+                    if media_type and media_type.startswith('image/'):
+                        content.append(
+                            responses.ResponseInputImageParam(
+                                image_url=item.file_id,
+                                type='input_image',
+                                detail='auto',
+                            )
+                        )
+                    else:
+                        # For documents and other files
+                        content.append(
+                            responses.ResponseInputFileParam(
+                                type='input_file',
+                                file_data=item.file_id,
+                                filename=item.filename or 'uploaded_file',
+                            )
+                        )
                 else:
                     assert_never(item)
         return responses.EasyInputMessageParam(role='user', content=content)

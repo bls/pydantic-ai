@@ -27,6 +27,7 @@ from ..messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UploadedFile,
     UserPromptPart,
 )
 from ..profiles import ModelProfileSpec
@@ -42,6 +43,8 @@ try:
         BetaBase64PDFSourceParam,
         BetaContentBlock,
         BetaContentBlockParam,
+        BetaFileDocumentSourceParam,
+        BetaFileImageSourceParam,
         BetaImageBlockParam,
         BetaMessage,
         BetaMessageParam,
@@ -410,6 +413,20 @@ class AnthropicModel(Model):
                         )
                     else:  # pragma: no cover
                         raise RuntimeError(f'Unsupported media type: {item.media_type}')
+                elif isinstance(item, UploadedFile):
+                    media_type = item.inferred_media_type
+                    if media_type and media_type.startswith('image/'):
+                        yield BetaImageBlockParam(
+                            source=BetaFileImageSourceParam(file_id=item.file_id, type='file'),
+                            type='image',
+                        )
+                    elif media_type == 'application/pdf' or (media_type and media_type.startswith('text/')):
+                        yield BetaBase64PDFBlockParam(
+                            source=BetaFileDocumentSourceParam(file_id=item.file_id, type='file'),
+                            type='document',
+                        )
+                    else:
+                        raise RuntimeError(f'Unsupported media type for uploaded file: {media_type}')
                 else:
                     raise RuntimeError(f'Unsupported content type: {type(item)}')  # pragma: no cover
 

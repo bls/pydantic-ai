@@ -273,6 +273,54 @@ class DocumentUrl(FileUrl):
 
 
 @dataclass(repr=False)
+class UploadedFile:
+    """A reference to an uploaded file that can be processed by model providers."""
+
+    file_id: str
+    """The identifier or reference to the uploaded file."""
+
+    filename: str | None = None
+    """The original filename of the uploaded file, if available."""
+
+    media_type: str | None = None
+    """The media type of the uploaded file. If not provided, will be inferred from filename."""
+
+    kind: Literal['uploaded-file'] = 'uploaded-file'
+    """Type identifier, this is available on all parts as a discriminator."""
+
+    @property
+    def inferred_media_type(self) -> str | None:
+        """Return the media type, either explicit or inferred from filename."""
+        if self.media_type:
+            return self.media_type
+        if self.filename:
+            type_, _ = guess_type(self.filename)
+            return type_
+        return None
+
+    @property
+    def format(self) -> str | None:
+        """The file format of the uploaded file, if determinable."""
+        media_type = self.inferred_media_type
+        if not media_type:
+            return None
+        
+        try:
+            if media_type.startswith('audio/'):
+                return _audio_format_lookup.get(media_type)
+            elif media_type.startswith('image/'):
+                return _image_format_lookup.get(media_type)
+            elif media_type.startswith('video/'):
+                return _video_format_lookup.get(media_type)
+            else:
+                return _document_format_lookup.get(media_type)
+        except KeyError:
+            return None
+
+    __repr__ = _utils.dataclasses_no_defaults_repr
+
+
+@dataclass(repr=False)
 class BinaryContent:
     """Binary content, e.g. an audio or image file."""
 
@@ -330,7 +378,7 @@ class BinaryContent:
     __repr__ = _utils.dataclasses_no_defaults_repr
 
 
-UserContent: TypeAlias = 'str | ImageUrl | AudioUrl | DocumentUrl | VideoUrl | BinaryContent'
+UserContent: TypeAlias = 'str | ImageUrl | AudioUrl | DocumentUrl | VideoUrl | BinaryContent | UploadedFile'
 
 
 @dataclass(repr=False)
@@ -355,8 +403,8 @@ class ToolReturn:
     __repr__ = _utils.dataclasses_no_defaults_repr
 
 
-# Ideally this would be a Union of types, but Python 3.9 requires it to be a string, and strings don't work with `isinstance``.
-MultiModalContentTypes = (ImageUrl, AudioUrl, DocumentUrl, VideoUrl, BinaryContent)
+# Ideally this would be a Union of types, but Python 3.9 requires it to be a string, and strings don't work with `isinstance`.
+MultiModalContentTypes = (ImageUrl, AudioUrl, DocumentUrl, VideoUrl, BinaryContent, UploadedFile)
 _document_format_lookup: dict[str, DocumentFormat] = {
     'application/pdf': 'pdf',
     'text/plain': 'txt',
@@ -421,6 +469,15 @@ class UserPromptPart:
                     content.append(part if settings.include_content else {'kind': 'text'})
                 elif isinstance(part, (ImageUrl, AudioUrl, DocumentUrl, VideoUrl)):
                     content.append({'kind': part.kind, **({'url': part.url} if settings.include_content else {})})
+                elif isinstance(part, UploadedFile):
+                    converted_part = {'kind': part.kind}
+                    if settings.include_content:
+                        converted_part.update({
+                            'file_id': part.file_id,
+                            **({'filename': part.filename} if part.filename else {}),
+                            **({'media_type': part.inferred_media_type} if part.inferred_media_type else {})
+                        })
+                    content.append(converted_part)
                 elif isinstance(part, BinaryContent):
                     converted_part = {'kind': part.kind, 'media_type': part.media_type}
                     if settings.include_content and settings.include_binary_content:
